@@ -139,7 +139,11 @@ async function checkTestRunner(): Promise<CheckResult> {
 async function checkProjectConfig(): Promise<CheckResult> {
   const exists = await projectConfigExists();
   if (!exists) {
-    return { label: "aitg.config.json", ok: false, detail: "not found -- run `aitg init`" };
+    return {
+      label: "aitg.config.json",
+      ok: false,
+      detail: "not found -- run `aitg init --local` (no account needed) or `aitg init`",
+    };
   }
   try {
     const config = await readProjectConfig();
