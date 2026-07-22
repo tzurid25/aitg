@@ -30,6 +30,13 @@ export interface DiffResult {
   /** Commit representing the current working state. */
   headSha: string;
   baseRef: string;
+  /**
+   * Absolute path to the repo's top-level directory. `files[].path` is
+   * relative to THIS, not to whatever `cwd` the diff was run from — needed
+   * to convert back to cwd-relative paths when cwd is a subdirectory (e.g.
+   * a package inside a monorepo).
+   */
+  repoRoot: string;
   /** Files that survived filtering and carry at least one changed line. */
   files: ChangedFile[];
   /** Files dropped by exclude patterns / test detection, for reporting. */

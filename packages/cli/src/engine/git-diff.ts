@@ -108,6 +108,7 @@ export async function analyzeDiff(options: DiffOptions): Promise<DiffResult> {
   const baseRef = await resolveBaseRef(git, options.baseRef);
   const baseSha = await resolveMergeBase(git, baseRef);
   const headSha = (await git.raw(["rev-parse", "HEAD"])).trim();
+  const repoRoot = (await git.raw(["rev-parse", "--show-toplevel"])).trim();
 
   // When including uncommitted work we diff base..working-tree by omitting
   // the second revision; otherwise we pin to HEAD for a reproducible scan.
@@ -147,7 +148,15 @@ export async function analyzeDiff(options: DiffOptions): Promise<DiffResult> {
       "--find-renames",
       ...revisionArgs,
       "--",
-      entry.path,
+      // ":/" is git's root-relative pathspec magic. entry.path came out of
+      // `--name-status`, which always reports paths relative to the repo
+      // root — but this git process's cwd may be a subdirectory (e.g. a
+      // package inside a monorepo). Without ":/", git re-resolves the path
+      // relative to cwd instead, silently matches nothing, and the file
+      // gets dropped here with no error and no entry in excludedPaths.
+      // Verified: reproduces exactly this way when cwd is a package
+      // subdirectory rather than the repo root.
+      `:/${entry.path}`,
     ]);
 
     const changedRanges = parseUnifiedDiff(fileDiff);
@@ -171,6 +180,7 @@ export async function analyzeDiff(options: DiffOptions): Promise<DiffResult> {
     baseSha,
     headSha,
     baseRef,
+    repoRoot,
     files,
     excludedPaths,
     totalChangedLines: files.reduce((sum, f) => sum + f.changedLineCount, 0),

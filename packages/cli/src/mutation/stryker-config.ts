@@ -15,7 +15,6 @@ export function buildMutatePatterns(targets: ScanTarget[]): string[] {
 
   for (const target of targets) {
     for (const range of target.ranges) {
-      if (range.start < 0) throw new Error("range start must be >= 0");
       // Stryker expects POSIX separators even on Windows.
       const posixPath = target.path.split(path.sep).join("/");
       patterns.push(`${posixPath}:${range.start}-${range.end}`);
@@ -46,6 +45,8 @@ export interface StrykerConfigParams {
   targets: ScanTarget[];
   testRunner: TestRunner;
   cwd: string;
+  /** Absolute paths to plugin packages, bypassing Stryker's glob discovery. */
+  pluginPaths?: string[];
   concurrency?: number;
   timeoutMs?: number;
   incremental?: boolean;
@@ -56,6 +57,7 @@ export interface StrykerConfigParams {
 export interface StrykerRunConfig {
   mutate: string[];
   testRunner: string;
+  plugins?: string[];
   coverageAnalysis: "perTest" | "off";
   concurrency: number;
   timeoutMS: number;
@@ -79,6 +81,14 @@ export function buildStrykerConfig(params: StrykerConfigParams): StrykerRunConfi
   const config: StrykerRunConfig = {
     mutate: buildMutatePatterns(params.targets),
     testRunner,
+
+    // Explicit absolute paths. Stryker's default glob discovery silently
+    // finds nothing under some install layouts — verified against a real
+    // pnpm workspace, where it fails even with Stryker running as a clean
+    // subprocess from the project root.
+    ...(params.pluginPaths && params.pluginPaths.length > 0
+      ? { plugins: params.pluginPaths }
+      : {}),
 
     // Cost lever #1: only run the tests that actually cover each mutant,
     // instead of the whole suite per mutant. The command runner can't do

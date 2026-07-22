@@ -36,6 +36,7 @@
   },
   "devDependencies": {
     "@aitg/shared": "workspace:*",
+    "@stryker-mutator/vitest-runner": "^9.6.1",
     "@types/node": "^20.16.10",
     "esbuild": "^0.24.0",
     "tsup": "^8.3.0",

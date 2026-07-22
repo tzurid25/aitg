@@ -1,4 +1,6 @@
 import { spawn, type ChildProcess, type StdioOptions } from "node:child_process";
+import { readFileSync } from "node:fs";
+import { createRequire } from "node:module";
 import path from "node:path";
 import fs from "node:fs/promises";
 import { CliError } from "../lib/logger.js";
@@ -48,26 +50,87 @@ interface StrykerJsonReport {
 }
 
 /**
+ * Finds the absolute path to the Stryker plugin for a given test runner,
+ * resolved from the user's project.
+ *
+ * This is deliberately separate from how Stryker CORE gets loaded (which is
+ * now a clean `npx stryker run` subprocess — see runStrykerSubprocess below,
+ * and KNOWN-ISSUES.md for why that changed). Spawning Stryker as its own
+ * process fixes the "programmatic import breaks the child worker's
+ * resolution context" bug, but it does NOT fix a second, separate problem:
+ * under pnpm (and some other monorepo layouts), each package's node_modules
+ * is strict/isolated, so Stryker's own default plugin discovery — a glob
+ * over "@stryker-mutator/*" relative to wherever core itself resolves from —
+ * doesn't see sibling plugin packages that aren't core's own declared
+ * dependencies. This reproduces even with core running as a proper
+ * subprocess from the project root, confirmed against a real pnpm
+ * workspace: "command" and "vitest" test runners were both fine, but the
+ * mocha/vitest plugin was reported as "not loaded" even though vitest and
+ * @stryker-mutator/vitest-runner were both installed.
+ *
+ * The fix is the same shape as before: resolve the plugin's absolute entry
+ * file ourselves, from the user's project, and hand Stryker a literal path
+ * instead of asking it to discover the package by name. An absolute path
+ * bypasses Node's module resolution (and therefore pnpm's isolation) rather
+ * than working around it — it's not a package specifier Stryker's import()
+ * needs to search for.
+ */
+function resolveRunnerPlugin(cwd: string, runner: string): string[] {
+  // The command runner is built into core — there is no plugin to resolve.
+  if (runner === "unknown" || runner === "command") return [];
+
+  const pluginPackage = `@stryker-mutator/${runner}-runner`;
+
+  try {
+    const requireFromProject = createRequire(path.join(cwd, "package.json"));
+    const pkgJsonPath = requireFromProject.resolve(`${pluginPackage}/package.json`);
+    const pkgDir = path.dirname(pkgJsonPath);
+
+    // Stryker's `plugins` entries are module specifiers or file paths that it
+    // feeds to import(). A DIRECTORY is neither — passing one silently loads
+    // nothing. Resolve the actual entry file from the exports map.
+    const pkg = JSON.parse(readFileSync(pkgJsonPath, "utf-8")) as {
+      exports?: Record<string, { import?: string; default?: string } | string>;
+      main?: string;
+      module?: string;
+    };
+
+    const root = pkg.exports?.["."];
+    const entry =
+      (typeof root === "object" ? (root.import ?? root.default) : root) ??
+      pkg.module ??
+      pkg.main ??
+      "./dist/src/index.js";
+
+    return [path.resolve(pkgDir, entry)];
+  } catch {
+    // Not installed. Stryker's own message names the exact package, which is
+    // clearer than anything we would invent.
+    return [];
+  }
+}
+
+/**
  * Runs Stryker the way it's actually designed to be run: as its own process,
  * invoked from the user's project root, with a config file on disk.
  *
  * Earlier versions of this file imported `@stryker-mutator/core` directly
- * (`loadStryker`) and hand-resolved the runner plugin's entry file
- * (`resolveRunnerPlugin`) to work around it. That approach is not supported
- * by Stryker: it spawns its own child process to host the test runner, and
- * that child resolves plugins through its own module context. When core is
- * loaded via an absolute file-path import from outside the project, the
- * child process doesn't inherit a resolution context that can find sibling
- * plugins — so it fails with "Cannot find TestRunner plugin" even when the
- * plugin is sitting right there in node_modules. This was verified against
- * Stryker directly, with no AITG code in the path at all: the same failure
- * reproduces regardless of whether the plugin is passed as an absolute path
- * or a package name.
+ * (`loadStryker`) to work around the fact that we needed core loaded from
+ * the *user's* project, not the CLI's own dependency tree. That approach is
+ * not supported by Stryker: it spawns its own child process to host the
+ * test runner, and that child resolves plugins through its own module
+ * context. When core is loaded via an absolute file-path import from outside
+ * the project, the child process doesn't inherit a resolution context that
+ * can find sibling plugins — so it fails with "Cannot find TestRunner
+ * plugin" even when the plugin is sitting right there in node_modules. This
+ * was verified against Stryker directly, with no AITG code in the path at
+ * all: the same failure reproduces regardless of whether the plugin is
+ * passed as an absolute path or a package name.
  *
- * Spawning `npx stryker run` from `cwd: userProjectRoot` sidesteps all of
- * that: Stryker resolves its own plugins exactly as it does for every other
- * user, so plugin discovery is Stryker's problem again, not ours. See
- * KNOWN-ISSUES.md for the full writeup.
+ * Spawning `npx stryker run` from `cwd: userProjectRoot` sidesteps that:
+ * Stryker resolves core exactly as it does for every other user. Plugin
+ * *discovery* is a separate concern, still handled explicitly via
+ * resolveRunnerPlugin above. See KNOWN-ISSUES.md for the full writeup.
  */
 function runStrykerSubprocess(cwd: string, configPath: string): Promise<void> {
   return new Promise((resolve, reject) => {
@@ -236,9 +299,16 @@ export async function runMutationTests(
   }
 
   const existing = await readExistingStrykerConfig(options.cwd);
+
+  // See resolveRunnerPlugin's docstring: needed for pnpm/monorepo layouts
+  // where Stryker's own discovery can't see sibling plugin packages, even
+  // running as a clean subprocess.
+  const pluginPaths = resolveRunnerPlugin(options.cwd, detected.runner);
+
   const ours = buildStrykerConfig({
     targets: options.targets,
     testRunner: detected.runner,
+    pluginPaths,
     cwd: options.cwd,
     concurrency: options.concurrency,
     timeoutMs: options.timeoutMs,
@@ -253,6 +323,17 @@ export async function runMutationTests(
 
   const outputDir = path.join(options.cwd, OUTPUT_DIR);
   await fs.mkdir(outputDir, { recursive: true });
+
+  // A crashed or interrupted previous run leaves its sandbox behind
+  // (cleanTempDir only fires on a clean exit). Since Stryker's default
+  // sandbox copy takes everything under the project directory, an orphaned
+  // sandbox from a prior run gets copied INTO the next run's fresh sandbox
+  // — and if that keeps happening across repeated failed runs, each one
+  // nests one level deeper inside the last. Deep enough, that breaks
+  // relative-path lookups (e.g. tsconfig resolution) inside the sandbox.
+  // Clearing our own tempDir before every run guarantees a clean slate
+  // regardless of how the previous run ended.
+  await fs.rm(path.join(outputDir, ".stryker-tmp"), { recursive: true, force: true });
 
   // Stryker's CLI takes a config *file*, not an object, so the merged config
   // has to land on disk before we can spawn it.
