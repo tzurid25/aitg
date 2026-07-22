@@ -142,7 +142,7 @@ function resolveRunnerPlugin(cwd: string, runner: string): string[] {
  * tool. If the output matches a known cause we name it directly; otherwise we
  * fall back to the raw tail, which still beats a bare exit code.
  */
-function diagnoseStrykerFailure(
+export function diagnoseStrykerFailure(
   output: string,
   runner: string,
 ): { message: string; hint: string } | null {
