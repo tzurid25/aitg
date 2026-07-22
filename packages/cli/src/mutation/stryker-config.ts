@@ -15,6 +15,7 @@ export function buildMutatePatterns(targets: ScanTarget[]): string[] {
 
   for (const target of targets) {
     for (const range of target.ranges) {
+      if (range.start < 0) throw new Error("range start must be >= 0");
       // Stryker expects POSIX separators even on Windows.
       const posixPath = target.path.split(path.sep).join("/");
       patterns.push(`${posixPath}:${range.start}-${range.end}`);
