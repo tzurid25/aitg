@@ -1,0 +1,10 @@
+{
+  "projectId": "local-test",
+  "projectSlug": "local-test",
+  "organizationSlug": "local-test",
+  "minMutationScore": 0,
+  "maxSurvivedMutants": null,
+  "failBuildOnBreach": false,
+  "excludePatterns": ["**/*.test.*", "**/*.spec.*", "**/node_modules/**"],
+  "configVersion": 1
+}

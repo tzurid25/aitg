@@ -23,7 +23,7 @@ export default async function SettingsPage() {
           <Field label="Name" value={org.name} />
           <Field label="Slug" value={org.slug} mono />
           <Field label="Billing email" value={org.billingEmail ?? "—"} />
-          <Field label="Created" value={org.createdAt.toLocaleDateString()} />
+          <Field label="Created" value={org.createdAt.toLocaleDateString("en-US")} />
         </Card>
 
         <Card>

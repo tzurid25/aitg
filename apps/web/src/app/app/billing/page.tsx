@@ -84,7 +84,7 @@ export default async function BillingPage() {
             </span>
           </div>
           <div style={{ marginTop: 8, fontSize: 12.5, color: "var(--text-muted)" }}>
-            Resets {resetsAt.toLocaleDateString(undefined, { month: "long", day: "numeric" })}.
+            Resets {resetsAt.toLocaleDateString("en-US", { month: "long", day: "numeric" })}.
             Quota is measured in mutants analyzed, not scans, so a large diff costs more than a
             small one.
           </div>
@@ -156,15 +156,15 @@ export default async function BillingPage() {
               {invoices.map((invoice) => (
                 <tr key={invoice.id}>
                   <Td mono>
-                    {invoice.periodStart?.toLocaleDateString() ?? "—"} –{" "}
-                    {invoice.periodEnd?.toLocaleDateString() ?? "—"}
+                    {invoice.periodStart?.toLocaleDateString("en-US") ?? "-"} –{" "}
+                    {invoice.periodEnd?.toLocaleDateString("en-US") ?? "-"}
                   </Td>
                   <Td>{invoice.status}</Td>
                   <Td align="right" mono>
                     {(invoice.amountDueCents / 100).toFixed(2)} {invoice.currency.toUpperCase()}
                   </Td>
                   <Td align="right" mono>
-                    {invoice.paidAt?.toLocaleDateString() ?? "—"}
+                    {invoice.paidAt?.toLocaleDateString("en-US") ?? "-"}
                   </Td>
                 </tr>
               ))}

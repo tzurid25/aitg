@@ -9,7 +9,16 @@ import { PROJECT_CONFIG_FILE } from "../lib/constants.js";
 export interface InitOptions {
   project?: string;
   force?: boolean;
+  /** Set up for local-only use, with no cloud account or network access. */
+  local?: boolean;
 }
+
+/**
+ * Marks a config as local-only. `scan` already works offline (it just skips
+ * the upload when there are no credentials), so local mode is purely about
+ * not making an account a prerequisite for trying the tool.
+ */
+const LOCAL_SENTINEL = "local";
 
 export async function initCommand(options: InitOptions): Promise<void> {
   logger.title("Initialize AI Test Integrity Guard");
@@ -21,7 +30,38 @@ export async function initCommand(options: InitOptions): Promise<void> {
     );
   }
 
-  const creds = await requireCredentials();
+  // Local mode: no credentials, no API calls, no account. A developer
+  // evaluating the tool should be able to get a mutation score on their own
+  // code before deciding whether it's worth signing up for anything.
+  if (options.local) {
+    const config = defaultProjectConfig({
+      projectId: LOCAL_SENTINEL,
+      projectSlug: LOCAL_SENTINEL,
+      organizationSlug: LOCAL_SENTINEL,
+    });
+    await writeProjectConfig(config);
+
+    logger.success(`Created ${PROJECT_CONFIG_FILE} (local mode)`);
+    logger.dim(`  Minimum mutation score: ${config.minMutationScore}%`);
+    logger.dim(`  Fail build on breach:   ${config.failBuildOnBreach}`);
+    logger.dim("  Results stay on this machine; nothing is uploaded.");
+    console.log(`\nNext: run ${chalk.bold.cyan("aitg scan")} to run your first scan.`);
+    console.log(
+      chalk.dim(`Later, \`aitg login\` then \`aitg init --force\` will connect this repo to the cloud.`),
+    );
+    return;
+  }
+
+  const creds = await requireCredentials().catch(() => {
+    // Signing up is a reasonable ask for a team adopting the tool, but not
+    // for someone trying it for the first time. Name the offline path here
+    // rather than leaving "run `aitg login`" as the only way forward.
+    throw new CliError(
+      "Not logged in.",
+      "Run `aitg init --local` to use AITG offline (no account needed),\n" +
+        "   or `aitg login` to connect this repo to the cloud dashboard.",
+    );
+  });
   const api = ApiClient.forAuthenticatedUser(creds);
 
   const identitySpin = spinner("Reading repository info...").start();
@@ -47,7 +87,7 @@ export async function initCommand(options: InitOptions): Promise<void> {
     }
     const list = projects.map((p) => `  - ${p.slug}`).join("\n");
     throw new CliError(
-      "Multiple projects found — you must specify one.",
+      "Multiple projects found -- you must specify one.",
       `Re-run with --project <slug>. Available projects:\n${list}`,
     );
   }

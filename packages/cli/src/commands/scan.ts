@@ -92,7 +92,18 @@ export async function scanCommand(options: ScanOptions): Promise<void> {
   const mutationSpin = spinner("Running mutation tests (this can take a while)...").start();
 
   const run = await runMutationTests({
-    targets: diff.files.map((f) => ({ path: f.path, ranges: f.changedRanges })),
+    // diff.files[].path is relative to diff.repoRoot (that's what `git diff
+    // --name-status` reports, regardless of which directory the command ran
+    // from). Stryker, though, is spawned with `cwd` as its own project root
+    // (see runMutationTests / runStrykerSubprocess) — when `cwd` is a
+    // subdirectory of the repo, e.g. a package inside a monorepo, its
+    // `mutate` glob patterns need paths relative to `cwd`, not to the repo
+    // root, or they silently match nothing. Re-anchoring here keeps the diff
+    // engine's repo-root-relative convention intact everywhere else.
+    targets: diff.files.map((f) => ({
+      path: path.relative(cwd, path.join(diff.repoRoot, f.path)).split(path.sep).join("/"),
+      ranges: f.changedRanges,
+    })),
     cwd,
     concurrency: options.concurrency ? parseInt(options.concurrency, 10) : undefined,
   }).catch((err) => {

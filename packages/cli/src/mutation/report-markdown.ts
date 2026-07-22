@@ -12,9 +12,9 @@ function formatDuration(ms: number): string {
 
 function verdictLine(score: number, threshold: number): string {
   if (score >= threshold) {
-    return `**PASSED** — mutation score ${score}% meets the ${threshold}% threshold.`;
+    return `**PASSED** -- mutation score ${score}% meets the ${threshold}% threshold.`;
   }
-  return `**FAILED** — mutation score ${score}% is below the ${threshold}% threshold.`;
+  return `**FAILED** -- mutation score ${score}% is below the ${threshold}% threshold.`;
 }
 
 function groupByFile(mutants: MutantResult[]): Map<string, MutantResult[]> {
@@ -41,7 +41,7 @@ export function generateMarkdownReport(params: {
 
   const lines: string[] = [];
 
-  lines.push("# AI Test Integrity Guard — Scan Report");
+  lines.push("# AI Test Integrity Guard -- Scan Report");
   lines.push("");
   lines.push(verdictLine(score.score, threshold));
   lines.push("");
@@ -124,10 +124,10 @@ export function generateMarkdownReport(params: {
     const where =
       group.occurrences === 1
         ? `line ${group.lines[0]}`
-        : `${group.occurrences} places (lines ${group.lines.slice(0, 6).join(", ")}${group.lines.length > 6 ? ", …" : ""})`;
+        : `${group.occurrences} places (lines ${group.lines.slice(0, 6).join(", ")}${group.lines.length > 6 ? ", ..." : ""})`;
 
     lines.push(
-      `### ${index + 1}. \`${group.filePath}\` — ${where}  ·  ${group.severity.toUpperCase()}`,
+      `### ${index + 1}. \`${group.filePath}\` -- ${where}  -  ${group.severity.toUpperCase()}`,
     );
     lines.push("");
     if (group.originalCode) {
@@ -144,7 +144,7 @@ export function generateMarkdownReport(params: {
   if (triage.omittedGroups > 0) {
     lines.push(
       `_${triage.omittedGroups} lower-priority gap${triage.omittedGroups === 1 ? "" : "s"} ` +
-        "omitted. Close these first and re-scan — the next batch will be smaller._",
+        "omitted. Close these first and re-scan -- the next batch will be smaller._",
     );
     lines.push("");
   }

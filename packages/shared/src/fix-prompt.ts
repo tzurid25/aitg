@@ -8,6 +8,16 @@ export interface FixPromptOptions {
   filePath?: string;
   /** Distinct gaps to include. Default 10. */
   limit?: number;
+  /**
+   * Mutants Stryker never executed because no test covers that line at all.
+   *
+   * These are a different problem from survivors and need saying separately.
+   * A survivor means "a test runs this line but doesn't check the result" --
+   * tighten an assertion. No-coverage means "nothing reaches this line" --
+   * write a test that calls it. Reporting only survivors makes a file with
+   * zero tests look cleaner than one with weak tests, which is backwards.
+   */
+  noCoverage?: { total: number; files: Array<{ filePath: string; count: number }> };
 }
 
 const SEVERITY_LABEL: Record<SurvivorGroup["severity"], string> = {
@@ -23,7 +33,7 @@ const SEVERITY_LABEL: Record<SurvivorGroup["severity"], string> = {
  *
  * The design constraint that matters most: this has to be a *task*, not a
  * report. An exhaustive list of every surviving mutant is technically
- * complete and practically useless — it overflows context windows, and a
+ * complete and practically useless -- it overflows context windows, and a
  * developer who opens it decides to deal with it later, permanently. So the
  * prompt carries a capped, deduplicated, severity-ordered batch, and says
  * plainly how much was left out and how to get the rest.
@@ -34,11 +44,61 @@ const SEVERITY_LABEL: Record<SurvivorGroup["severity"], string> = {
  * exist. Both kill the mutant and leave the suite exactly as weak.
  */
 export function buildFixPrompt(survivors: Mutant[], options: FixPromptOptions): string {
-  const { score, threshold, filePath, limit = 10 } = options;
+  const { score, threshold, filePath, limit = 10, noCoverage } = options;
 
   const triage = triageSurvivors(survivors, { limit, filePath });
 
+  /** Uncovered-code section, shared by both the empty and populated paths. */
+  const noCoverageLines = (hasGapsAbove: boolean): string[] => {
+    if (!noCoverage || noCoverage.total === 0) return [];
+
+    const out: string[] = [];
+    out.push("## Code with no test coverage at all");
+    out.push("");
+    out.push(
+      `${noCoverage.total} mutant${noCoverage.total === 1 ? "" : "s"} ` +
+        `${noCoverage.total === 1 ? "was" : "were"} never executed, because no test reaches ` +
+        "that code. " +
+        (hasGapsAbove
+          ? "This is a separate problem from the gaps above: there is no assertion to " +
+            "tighten, because there is no test. "
+          : "There is no assertion to tighten here, because there is no test. ") +
+        "These lines need a test that calls them at all.",
+    );
+    out.push("");
+
+    const shown = noCoverage.files.slice(0, 10);
+    for (const file of shown) {
+      out.push(`- \`${file.filePath}\` -- ${file.count} unexecuted mutant${file.count === 1 ? "" : "s"}`);
+    }
+    if (noCoverage.files.length > shown.length) {
+      out.push(`- ...and ${noCoverage.files.length - shown.length} more file(s)`);
+    }
+    out.push("");
+    return out;
+  };
+
   if (triage.groups.length === 0) {
+    // "Every mutant was detected" is false when mutants were skipped rather
+    // than killed -- reporting a clean bill of health over untested code is
+    // the most damaging thing this tool could do.
+    if (noCoverage && noCoverage.total > 0) {
+      return [
+        "# Task: add tests for uncovered code",
+        "",
+        `Every mutant that ran was detected (mutation score: ${score.toFixed(1)}%, ` +
+          `threshold ${threshold}%) -- but some code was never reached by any test, ` +
+          "so that score describes only the part of the code your suite touches.",
+        "",
+        ...noCoverageLines(false),
+        "## What I need from you",
+        "",
+        "Write tests that execute the code listed above and assert its observable " +
+          "behaviour. Do not modify the production code.",
+        "",
+      ].join("\n");
+    }
+
     return [
       "# No action needed",
       "",
@@ -59,7 +119,7 @@ export function buildFixPrompt(survivors: Mutant[], options: FixPromptOptions): 
   lines.push(
     "I ran mutation testing on my code. The tool made small, deliberate changes " +
       "to the production source and re-ran the test suite. The changes listed " +
-      "below caused **no test to fail** — so the behaviour they alter is executed " +
+      "below caused **no test to fail** -- so the behaviour they alter is executed " +
       "by my tests but never actually verified. High coverage, no protection.",
   );
   lines.push("");
@@ -74,7 +134,7 @@ export function buildFixPrompt(survivors: Mutant[], options: FixPromptOptions): 
     lines.push(
       `Below are the **${triage.groups.length} highest-impact gaps**, ordered by severity. ` +
         `${triage.omittedGroups} lower-priority gap${triage.omittedGroups === 1 ? "" : "s"} ` +
-        `${triage.omittedGroups === 1 ? "is" : "are"} omitted — fix these first, re-run the ` +
+        `${triage.omittedGroups === 1 ? "is" : "are"} omitted -- fix these first, re-run the ` +
         "scan, and the next batch will be smaller.",
     );
     lines.push("");
@@ -88,10 +148,10 @@ export function buildFixPrompt(survivors: Mutant[], options: FixPromptOptions): 
     const location =
       group.occurrences === 1
         ? `line ${group.lines[0]}`
-        : `${group.occurrences} places — lines ${formatLines(group.lines)}`;
+        : `${group.occurrences} places -- lines ${formatLines(group.lines)}`;
 
     lines.push(
-      `### ${index + 1}. \`${group.filePath}\` — ${location}  ·  ${SEVERITY_LABEL[group.severity]}`,
+      `### ${index + 1}. \`${group.filePath}\` -- ${location}  -  ${SEVERITY_LABEL[group.severity]}`,
     );
     lines.push("");
 
@@ -107,6 +167,9 @@ export function buildFixPrompt(survivors: Mutant[], options: FixPromptOptions): 
     lines.push("");
   });
 
+  // ---- Uncovered code ----------------------------------------------------
+  lines.push(...noCoverageLines(true));
+
   // ---- The ask -----------------------------------------------------------
   lines.push("## What I need from you");
   lines.push("");
@@ -117,7 +180,7 @@ export function buildFixPrompt(survivors: Mutant[], options: FixPromptOptions): 
   lines.push("");
   lines.push(
     "Where a gap recurs across several lines, one well-chosen test may close " +
-      "all of them — say so rather than writing near-duplicate tests.",
+      "all of them -- say so rather than writing near-duplicate tests.",
   );
   lines.push("");
 
@@ -132,7 +195,7 @@ export function buildFixPrompt(survivors: Mutant[], options: FixPromptOptions): 
   );
   lines.push(
     "3. **Assert observable behaviour, not implementation.** Check what the code " +
-      "returns or does — not that some internal function was called.",
+      "returns or does -- not that some internal function was called.",
   );
   lines.push(
     "4. **No circular mocks.** A test that mocks the thing it is meant to verify " +
@@ -148,8 +211,8 @@ export function buildFixPrompt(survivors: Mutant[], options: FixPromptOptions): 
       "mapping.",
   );
   lines.push(
-    "7. **If a gap is genuinely not worth testing** — dead code, an unreachable " +
-      "branch, a trivial accessor — say so instead of writing a hollow test. A " +
+    "7. **If a gap is genuinely not worth testing** -- dead code, an unreachable " +
+      "branch, a trivial accessor -- say so instead of writing a hollow test. A " +
       "wrong test is worse than an acknowledged gap.",
   );
   lines.push("");
@@ -157,7 +220,7 @@ export function buildFixPrompt(survivors: Mutant[], options: FixPromptOptions): 
   return lines.join("\n");
 }
 
-/** "12, 44, 57" — or "12, 44, 57 and 9 more" once the list stops being readable. */
+/** "12, 44, 57" -- or "12, 44, 57 and 9 more" once the list stops being readable. */
 function formatLines(lines: number[]): string {
   const shown = lines.slice(0, 6);
   const rest = lines.length - shown.length;

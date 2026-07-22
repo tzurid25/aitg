@@ -94,7 +94,7 @@ export default async function OverviewPage() {
           <SectionLabel>Mutation score over time</SectionLabel>
           <ScoreTrend
             points={chronological.map((r) => ({
-              label: new Date(r.createdAt).toLocaleDateString(undefined, {
+              label: new Date(r.createdAt).toLocaleDateString("en-US", {
                 month: "short",
                 day: "numeric",
               }),
