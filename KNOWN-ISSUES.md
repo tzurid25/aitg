@@ -209,24 +209,45 @@ coverage tool would have reported 100% on the same suite.
 
 ## Open
 
-Nothing blocking. Both previously-open items are now closed:
+Nothing outstanding. All previously-open items are closed.
 
-- **`command` runner fallback** -- verified end-to-end against a real project
-  using `node:test` (a framework with no Stryker plugin). Produced 12 mutants
-  and correctly surfaced 8 survivors on the two threshold comparisons, with
-  `coverageAnalysis: "off"` and no `plugins` field, as intended.
-- **Test suite for AITG itself** -- 41 tests across `detect-runner`,
-  `stryker-config`, and the failure diagnoser. These were themselves checked
-  by mutation: deliberately reintroducing four past bugs (perTest coverage on
-  the command runner, the ava fallback regressing to `unknown`, jest ordered
-  before vitest, and the diagnoser returning null) each caused failures, so
-  the suite catches regressions rather than merely executing the code.
+**`command` runner fallback** -- verified end-to-end against a real project
+using `node:test` (a framework with no Stryker plugin). Produced 12 mutants
+and correctly surfaced 8 survivors on the two threshold comparisons, with
+`coverageAnalysis: "off"` and no `plugins` field, as intended.
 
-Still worth doing, though neither is a defect:
+**Test suite** -- 54 tests across `detect-runner`, `stryker-config`, the
+failure diagnoser, and the diff engine.
 
-- Coverage does not yet extend to `git-diff.ts` or `scan.ts`, where the
-  path-resolution bugs (#5, #6) lived. Those need a git fixture rather than a
-  plain unit test.
+The diff-engine tests build a real git repository per test rather than mocking
+simple-git. That is deliberate: bugs #5 and #6 were both about how git resolves
+pathspecs relative to a process's cwd, and a mocked git would have returned
+whatever paths it was told to. Only real git reproduces them.
+
+The suite was validated by mutation rather than by coverage. Six past defects
+were deliberately reintroduced; each was caught:
+
+| Reintroduced defect | Tests that failed |
+| --- | ---: |
+| `perTest` coverage on the command runner | 2 |
+| ava/uvu falling back to `unknown` | 4 |
+| jest ordered before vitest | 1 |
+| diagnoser always returning null | 10 |
+| pathspec without `:/` (bug #5) | 3 |
+| `repoRoot` not read from git (bug #6) | 1 |
+
+One test initially failed this check. The merge-base test used an *added* file
+for the divergent commit, which appears as a deletion when diffing against the
+branch tip -- and deletions are skipped, so both strategies produced the same
+visible result and the assertion passed either way. It now modifies a shared
+file instead, and catches the mutation. Worth recording: the test looked
+correct, passed, and verified nothing. That is the exact failure mode this tool
+exists to detect, found in its own suite.
+
+Remaining, though neither is a defect:
+
+- `scan.ts` orchestration is covered only indirectly, through the units it
+  calls. End-to-end coverage there needs a fixture project plus a Stryker run.
 - The diagnoser matches seven known failure classes. New Stryker versions may
   introduce others; unrecognised output falls back to printing Stryker's last
   25 lines, which degrades gracefully.
