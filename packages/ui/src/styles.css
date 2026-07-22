@@ -1,0 +1,130 @@
+:root {
+  --bg: #0b0f14;
+  --surface: #111720;
+  --surface-raised: #161e29;
+  --surface-overlay: #1c2634;
+
+  --border: #212c3b;
+  --border-strong: #2e3c4f;
+
+  --text: #e6edf5;
+  --text-muted: #8da0b8;
+  --text-faint: #5a6d85;
+
+  --killed: #2dd4bf;
+  --killed-dim: #134e4a;
+  --survived: #f5a524;
+  --survived-dim: #4a3211;
+  --no-coverage: #7c7a99;
+  --no-coverage-dim: #2a2a3a;
+  --timeout: #60a5fa;
+  --timeout-dim: #1e3a5f;
+  --runtime-error: #f26d6d;
+  --runtime-error-dim: #4a1d1d;
+
+  --pass: #2dd4bf;
+  --warn: #f5a524;
+  --fail: #f26d6d;
+  --accent: #5eead4;
+
+  --font-sans: "IBM Plex Sans", system-ui, -apple-system, sans-serif;
+  --font-mono: "IBM Plex Mono", ui-monospace, "SF Mono", Menlo, monospace;
+
+  --radius-sm: 4px;
+  --radius-md: 6px;
+  --radius-lg: 10px;
+
+  --sidebar-width: 232px;
+  --topbar-height: 52px;
+}
+
+/* Light mode is offered but dark is the default per the product brief —
+   this audience works in dark editors and the mutation strip's colour
+   semantics were tuned against a dark ground. */
+[data-theme="light"] {
+  --bg: #fbfcfd;
+  --surface: #ffffff;
+  --surface-raised: #f4f7fa;
+  --surface-overlay: #ffffff;
+  --border: #e2e8f0;
+  --border-strong: #cbd5e1;
+  --text: #0f172a;
+  --text-muted: #475569;
+  --text-faint: #94a3b8;
+  --killed-dim: #ccfbf1;
+  --survived-dim: #fef3c7;
+  --no-coverage-dim: #ede9fe;
+  --timeout-dim: #dbeafe;
+  --runtime-error-dim: #fee2e2;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  margin: 0;
+  padding: 0;
+  background: var(--bg);
+  color: var(--text);
+  font-family: var(--font-sans);
+  font-size: 14px;
+  line-height: 1.55;
+  -webkit-font-smoothing: antialiased;
+}
+
+a {
+  color: inherit;
+  text-decoration: none;
+}
+
+/* Keyboard focus must always be visible — this is a quality floor, not a
+   feature. Using :focus-visible so pointer users don't see rings. */
+:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+  border-radius: var(--radius-sm);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}
+
+/* ---- Utility voice: uppercase mono labels ---- */
+.label {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 500;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--text-faint);
+}
+
+.mono {
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+}
+
+/* ---- Scrollbars ---- */
+::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: var(--border-strong);
+  border-radius: 5px;
+  border: 2px solid var(--bg);
+}
+::-webkit-scrollbar-thumb:hover {
+  background: var(--text-faint);
+}

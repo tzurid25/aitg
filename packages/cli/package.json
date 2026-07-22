@@ -1,0 +1,65 @@
+{
+  "name": "@aitg/cli",
+  "version": "0.1.0",
+  "description": "Mutation-tested quality gates for AI-generated code. Coverage is not quality.",
+  "private": false,
+  "type": "module",
+  "license": "MIT",
+  "bin": {
+    "aitg": "./dist/index.js"
+  },
+  "files": [
+    "dist",
+    "LICENSE",
+    "README.md"
+  ],
+  "scripts": {
+    "build": "tsup",
+    "dev": "tsup --watch",
+    "type-check": "tsc --noEmit",
+    "clean": "rm -rf dist node_modules .turbo"
+  },
+  "dependencies": {
+    "axios": "^1.7.7",
+    "chalk": "^5.3.0",
+    "commander": "^12.1.0",
+    "ora": "^8.1.0",
+    "simple-git": "^3.27.0"
+  },
+  "peerDependencies": {
+    "@stryker-mutator/core": ">=8.0.0"
+  },
+  "peerDependenciesMeta": {
+    "@stryker-mutator/core": {
+      "optional": true
+    }
+  },
+  "devDependencies": {
+    "@aitg/shared": "workspace:*",
+    "@types/node": "^20.16.10",
+    "esbuild": "^0.24.0",
+    "tsup": "^8.3.0",
+    "typescript": "^5.6.3",
+    "vitest": "^4.1.10"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "author": "TactiCode",
+  "keywords": [
+    "mutation-testing",
+    "stryker",
+    "test-quality",
+    "ai-generated-code",
+    "quality-gate",
+    "ci"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/tacticode/aitg-cli"
+  },
+  "homepage": "https://aitg.dev"
+}

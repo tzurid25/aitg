@@ -1,0 +1,42 @@
+# AITG mutation quality gate.
+#
+# Drop this at .github/workflows/aitg.yml in your repository.
+#
+# The scan runs on YOUR runner, not ours — your source code never leaves your
+# CI. Only the resulting report (file paths, line numbers, mutation outcomes)
+# is uploaded.
+
+name: Mutation quality gate
+
+on:
+  pull_request:
+    types: [opened, reopened, synchronize]
+
+jobs:
+  mutation-score:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # AITG diffs against the base branch, so a shallow clone would leave
+          # it unable to find the merge base. 0 fetches full history.
+          fetch-depth: 0
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - run: npm ci
+
+      - name: Install AITG
+        run: npm install -g @aitg/cli
+
+      - name: Run mutation scan
+        env:
+          AITG_API_KEY: ${{ secrets.AITG_API_KEY }}
+          # Lets AITG attach the result to this pull request.
+          AITG_PR_NUMBER: ${{ github.event.pull_request.number }}
+          AITG_BASE_REF: ${{ github.event.pull_request.base.ref }}
+        run: aitg scan --base "origin/$AITG_BASE_REF"

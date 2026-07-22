@@ -1,0 +1,615 @@
+// ============================================================================
+// AI Test Integrity Guard — Core Data Model
+// Multi-tenant SaaS. Tenant boundary = Organization. Every child table that
+// is queried directly by the API carries an indexed organizationId, even
+// when it could technically be derived by walking a relation, so that every
+// query can be scoped/filtered in a single WHERE clause (tenant isolation).
+// ============================================================================
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ----------------------------------------------------------------------------
+// Enums
+// ----------------------------------------------------------------------------
+
+enum MembershipRole {
+  OWNER
+  ADMIN
+  DEVELOPER
+  VIEWER
+}
+
+enum AuthProvider {
+  GITHUB
+  GOOGLE
+  EMAIL
+}
+
+enum RepositoryProvider {
+  GITHUB
+  GITLAB
+  BITBUCKET
+  MANUAL
+}
+
+enum TestRunStatus {
+  QUEUED
+  RUNNING
+  COMPLETED
+  // The scan itself broke — Stryker crashed, no test runner was found, the
+  // suite failed before mutation began. Distinct from COMPLETED-with-a-low-
+  // score, because the two demand opposite responses: a broken scan is a
+  // build problem to fix now, a low score is testing debt to work through.
+  // Collapsing them lets a silently broken pipeline masquerade as bad code.
+  FAILED
+  CANCELLED
+}
+
+// Severity of a run outcome, in the order a team should act on it.
+// Functionality before quality: never ask someone to improve a mutation score
+// while their scan is not actually running.
+enum RunSeverity {
+  P0_SCAN_BROKEN  // could not run or complete
+  P1_GATE_FAILED  // ran fine, below threshold, build blocked
+  P2_GATE_WARNING // ran fine, below threshold, non-blocking
+  P3_HEALTHY      // ran fine, above threshold
+}
+
+enum TestRunTrigger {
+  CLI
+  GITHUB_PR
+  GITHUB_PUSH
+  MANUAL
+  SCHEDULED
+}
+
+enum MutantStatus {
+  KILLED
+  SURVIVED
+  TIMEOUT
+  NO_COVERAGE
+  RUNTIME_ERROR
+  IGNORED
+}
+
+enum QualityGateStatus {
+  PASSED
+  FAILED
+  WARNING
+}
+
+enum ApiKeyScope {
+  CLI_SCAN
+  FULL_ACCESS
+  READ_ONLY
+}
+
+enum InvoiceStatus {
+  DRAFT
+  OPEN
+  PAID
+  VOID
+  UNCOLLECTIBLE
+}
+
+enum WebhookEventStatus {
+  PENDING
+  PROCESSED
+  FAILED
+}
+
+enum DeviceAuthStatus {
+  PENDING
+  APPROVED
+  EXPIRED
+  DENIED
+}
+
+enum AuditLogAction {
+  ORG_CREATED
+  ORG_UPDATED
+  MEMBER_INVITED
+  MEMBER_ROLE_CHANGED
+  MEMBER_REMOVED
+  PROJECT_CREATED
+  PROJECT_UPDATED
+  PROJECT_DELETED
+  REPOSITORY_LINKED
+  REPOSITORY_UNLINKED
+  API_KEY_CREATED
+  API_KEY_REVOKED
+  QUALITY_GATE_UPDATED
+  BILLING_UPDATED
+}
+
+// ----------------------------------------------------------------------------
+// Core tenancy: Organization, User, Membership
+// ----------------------------------------------------------------------------
+
+model Organization {
+  id        String   @id @default(cuid())
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  name      String
+  slug      String   @unique
+  avatarUrl String?
+
+  // Billing snapshot fields (source of truth remains the billing provider,
+  // e.g. Stripe — these are denormalized for fast reads in Phase 6/8)
+  billingEmail        String?
+  stripeCustomerId    String?  @unique
+  planId               String? // e.g. "free" | "team" | "enterprise"
+
+  // Usage metering — enforced BEFORE a scan is queued, so compute is never
+  // spent on a request that would exceed the plan's mutation budget.
+  monthlyMutationQuota Int      @default(200)
+  monthlyMutationsUsed Int      @default(0)
+  quotaResetAt         DateTime @default(now())
+
+  memberships    Membership[]
+  githubInstallations GithubInstallation[]
+  scanReplays         ScanReplay[]
+  projects       Project[]
+  apiKeys        ApiKey[]
+  invoices       BillingInvoice[]
+  webhookEvents  WebhookEvent[]
+  auditLogs      AuditLog[]
+
+  @@index([slug])
+  @@map("organizations")
+}
+
+model User {
+  id        String   @id @default(cuid())
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  email         String       @unique
+  name          String?
+  avatarUrl     String?
+  passwordHash  String? // null when the user only ever used OAuth
+  authProvider  AuthProvider @default(EMAIL)
+
+  emailVerifiedAt DateTime?
+  lastLoginAt     DateTime?
+
+  memberships  Membership[]
+  apiKeys      ApiKey[] @relation("ApiKeyCreatedBy")
+  auditLogs    AuditLog[]
+
+  @@index([email])
+  @@map("users")
+}
+
+// Join table: User <-> Organization, carries the RBAC role.
+model Membership {
+  id        String         @id @default(cuid())
+  createdAt DateTime       @default(now())
+  updatedAt DateTime       @updatedAt
+
+  organizationId String
+  organization   Organization   @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  userId String
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  role MembershipRole @default(DEVELOPER)
+
+  invitedByUserId String?
+  invitedEmail    String? // set while the invite is pending (user may not exist yet)
+  acceptedAt      DateTime?
+
+  @@unique([organizationId, userId])
+  @@index([userId])
+  @@index([organizationId, role])
+  @@map("memberships")
+}
+
+// ----------------------------------------------------------------------------
+// Project / Repository hierarchy
+// ----------------------------------------------------------------------------
+
+model Project {
+  id        String   @id @default(cuid())
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  name        String
+  slug        String
+  description String?
+
+  repositories Repository[]
+  qualityGates QualityGate[]
+
+  @@unique([organizationId, slug])
+  @@index([organizationId])
+  @@map("projects")
+}
+
+model Repository {
+  id        String   @id @default(cuid())
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  organizationId String
+  projectId      String
+  project        Project      @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  provider   RepositoryProvider @default(MANUAL)
+  externalId String? // e.g. GitHub repo id, used to correlate webhooks
+  fullName   String // e.g. "acme/api-service"
+  defaultBranch String @default("main")
+
+  isActive Boolean @default(true)
+
+  testRuns TestRun[]
+
+  // GitHub App installation that granted access, when linked via the App
+  // rather than the CLI. Nullable so CLI-only repos remain valid.
+  githubInstallationId String?
+
+  @@unique([projectId, fullName])
+  @@index([organizationId])
+  @@index([provider, externalId])
+  @@map("repositories")
+}
+
+// ----------------------------------------------------------------------------
+// API Keys (CLI <-> Cloud API authentication)
+// ----------------------------------------------------------------------------
+
+model ApiKey {
+  id        String   @id @default(cuid())
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  createdByUserId String?
+  createdByUser   User?   @relation("ApiKeyCreatedBy", fields: [createdByUserId], references: [id], onDelete: SetNull)
+
+  name       String
+  // Never store the raw key. Store a SHA-256 hash + a short non-secret
+  // prefix (e.g. "aitg_live_7fA2") so the dashboard can display "which key
+  // is this" without ever holding the secret.
+  keyPrefix  String
+  keyHash    String      @unique
+  scope      ApiKeyScope @default(CLI_SCAN)
+
+  lastUsedAt DateTime?
+  expiresAt  DateTime?
+  revokedAt  DateTime?
+
+  @@index([organizationId])
+  @@index([keyHash])
+  @@map("api_keys")
+}
+
+// ----------------------------------------------------------------------------
+// Test Runs / Mutants (mutation testing results)
+// ----------------------------------------------------------------------------
+
+model TestRun {
+  id        String   @id @default(cuid())
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  organizationId String
+  repositoryId   String
+  repository     Repository @relation(fields: [repositoryId], references: [id], onDelete: Cascade)
+
+  status   TestRunStatus  @default(QUEUED)
+  trigger  TestRunTrigger @default(CLI)
+  severity RunSeverity    @default(P3_HEALTHY)
+
+  replay ScanReplay?
+
+  commitSha    String?
+  branch       String?
+  pullRequestNumber Int?
+
+  // Aggregate results, computed once the run completes. Kept denormalized
+  // on the run row for fast dashboard listing (avoids aggregating Mutant on
+  // every page load).
+  mutationScore    Float?  // 0-100
+  mutantsTotal     Int?
+  mutantsKilled    Int?
+  mutantsSurvived  Int?
+  mutantsTimedOut  Int?
+  mutantsNoCoverage Int?
+
+  startedAt   DateTime?
+  completedAt DateTime?
+  errorMessage String?
+
+  mutants      Mutant[]
+  qualityGateResult QualityGateResult?
+
+  @@index([organizationId])
+  @@index([repositoryId, createdAt])
+  @@index([status])
+  @@map("test_runs")
+}
+
+model Mutant {
+  id        String   @id @default(cuid())
+  createdAt DateTime @default(now())
+
+  organizationId String
+  testRunId      String
+  testRun        TestRun @relation(fields: [testRunId], references: [id], onDelete: Cascade)
+
+  filePath   String
+  lineNumber Int
+  columnNumber Int?
+
+  mutatorName String // e.g. "ConditionalExpression", "ArithmeticOperator"
+  status      MutantStatus
+
+  originalCode String? @db.Text
+  mutatedCode  String? @db.Text
+  killedByTest String?
+
+  @@index([testRunId])
+  @@index([organizationId])
+  @@index([testRunId, status])
+  @@map("mutants")
+}
+
+// ----------------------------------------------------------------------------
+// Quality Gates
+// ----------------------------------------------------------------------------
+
+// Configuration: the threshold a project must meet.
+model QualityGate {
+  id        String   @id @default(cuid())
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  organizationId String
+  projectId      String
+  project        Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  name                 String  @default("Default Quality Gate")
+  minMutationScore     Float   @default(70)
+  maxSurvivedMutants   Int?
+  failBuildOnBreach    Boolean @default(true)
+  excludePatterns      String[] @default([])
+  isActive             Boolean @default(true)
+
+  results QualityGateResult[]
+
+  @@index([organizationId])
+  @@index([projectId])
+  @@map("quality_gates")
+}
+
+// Result: the evaluated outcome of a QualityGate against one TestRun.
+model QualityGateResult {
+  id        String   @id @default(cuid())
+  createdAt DateTime @default(now())
+
+  organizationId String
+
+  qualityGateId String
+  qualityGate   QualityGate @relation(fields: [qualityGateId], references: [id], onDelete: Cascade)
+
+  testRunId String  @unique
+  testRun   TestRun @relation(fields: [testRunId], references: [id], onDelete: Cascade)
+
+  status  QualityGateStatus
+  reason  String?
+
+  @@index([organizationId])
+  @@index([qualityGateId])
+  @@map("quality_gate_results")
+}
+
+// ----------------------------------------------------------------------------
+// Billing
+// ----------------------------------------------------------------------------
+
+model BillingInvoice {
+  id        String   @id @default(cuid())
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  stripeInvoiceId String? @unique
+  status          InvoiceStatus @default(DRAFT)
+
+  amountDueCents  Int
+  amountPaidCents Int      @default(0)
+  currency        String   @default("usd")
+
+  periodStart DateTime?
+  periodEnd   DateTime?
+  paidAt      DateTime?
+  hostedInvoiceUrl String?
+
+  @@index([organizationId])
+  @@index([status])
+  @@map("billing_invoices")
+}
+
+// ----------------------------------------------------------------------------
+// Webhooks (inbound from GitHub/GitLab, outbound to Stripe consumers, etc.)
+// ----------------------------------------------------------------------------
+
+model WebhookEvent {
+  id        String   @id @default(cuid())
+  createdAt DateTime @default(now())
+
+  organizationId String?
+  organization   Organization? @relation(fields: [organizationId], references: [id], onDelete: SetNull)
+
+  source      String // e.g. "github", "stripe"
+  eventType   String // e.g. "pull_request.opened", "invoice.paid"
+  externalId  String? // provider's event id, for idempotency
+  payload     Json
+  status      WebhookEventStatus @default(PENDING)
+  processedAt DateTime?
+  errorMessage String?
+
+  @@unique([source, externalId])
+  @@index([organizationId])
+  @@index([status])
+  @@map("webhook_events")
+}
+
+// ----------------------------------------------------------------------------
+// Replay
+// ----------------------------------------------------------------------------
+
+// Everything needed to reconstruct why a scan produced what it did, WITHOUT
+// storing source code.
+//
+// PRIVACY: this deliberately holds no file contents, no mutated code bodies,
+// and no verbatim test output. The product's promise is that source stays on
+// the customer's machine, and a debugging convenience is not worth breaking
+// it. Paths, line ranges, timings, tool versions and error messages resolve
+// the overwhelming majority of support cases; anything beyond that the
+// customer attaches deliberately via `aitg report --attach`.
+model ScanReplay {
+  id        String   @id @default(cuid())
+  createdAt DateTime @default(now())
+
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  testRunId String  @unique
+  testRun   TestRun @relation(fields: [testRunId], references: [id], onDelete: Cascade)
+
+  // Environment, so "works on my machine" becomes answerable.
+  cliVersion     String?
+  strykerVersion String?
+  testRunner     String?
+  nodeVersion    String?
+  platform       String?
+
+  // What was scanned — paths and ranges only.
+  baseRef       String?
+  headSha       String?
+  changedFiles  Json? // [{ path, addedLines: [[start, end]] }]
+  mutatedRanges Json? // ["src/a.ts:12-40"]
+
+  // Timings, for diagnosing slow scans.
+  diffDurationMs     Int?
+  mutationDurationMs Int?
+  uploadDurationMs   Int?
+
+  // Failure detail when status is FAILED. Truncated on write.
+  failureStage   String? // "diff" | "runner-detection" | "mutation" | "upload"
+  failureMessage String?
+
+  // Opt-in bundle the customer chose to send. Off by default.
+  attachedBundle Json?
+
+  @@index([organizationId, createdAt])
+  @@map("scan_replays")
+}
+
+// ----------------------------------------------------------------------------
+// GitHub App installation
+// ----------------------------------------------------------------------------
+
+// One row per GitHub App installation (an org or user account that installed
+// AITG). Deliberately separate from the OAuth sign-in path: the App is what
+// grants repository access, and it must keep working after the person who
+// installed it leaves the company.
+model GithubInstallation {
+  id        String   @id @default(cuid())
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  // GitHub's numeric installation id. Stored as String because JS numbers
+  // can't hold every id GitHub might issue.
+  installationId String @unique
+  accountLogin   String
+  accountType    String // "Organization" | "User"
+
+  // Null once GitHub tells us the app was uninstalled. Kept rather than
+  // deleted so historical runs still resolve their origin.
+  suspendedAt   DateTime?
+  uninstalledAt DateTime?
+
+  @@index([organizationId])
+  @@map("github_installations")
+}
+
+// ----------------------------------------------------------------------------
+// CLI device-code authentication
+// ----------------------------------------------------------------------------
+
+// Short-lived session backing `aitg login`. The CLI polls by deviceCode
+// (secret, never shown to the user); the user types userCode into the
+// browser. Same shape as the OAuth 2.0 Device Authorization Grant.
+model DeviceAuthSession {
+  id        String   @id @default(cuid())
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Hashed for the same reason API keys are: a leaked DB row must not grant
+  // the ability to complete someone else's pending login.
+  deviceCodeHash String @unique
+  // Short, human-typable, case-insensitive. Not a secret on its own —
+  // approving it still requires an authenticated browser session.
+  userCode       String @unique
+
+  status DeviceAuthStatus @default(PENDING)
+
+  // Populated on approval.
+  approvedByUserId String?
+  organizationId   String?
+  // The issued key's id, so it can be revoked if the session is later
+  // found to be fraudulent.
+  issuedApiKeyId   String?
+
+  expiresAt DateTime
+
+  @@index([userCode])
+  @@index([status, expiresAt])
+  @@map("device_auth_sessions")
+}
+
+// ----------------------------------------------------------------------------
+// Audit Log
+// ----------------------------------------------------------------------------
+
+model AuditLog {
+  id        String   @id @default(cuid())
+  createdAt DateTime @default(now())
+
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  actorUserId String?
+  actorUser   User?   @relation(fields: [actorUserId], references: [id], onDelete: SetNull)
+
+  action     AuditLogAction
+  targetType String? // e.g. "project", "membership"
+  targetId   String?
+  metadata   Json?
+  ipAddress  String?
+
+  @@index([organizationId, createdAt])
+  @@index([actorUserId])
+  @@map("audit_logs")
+}
