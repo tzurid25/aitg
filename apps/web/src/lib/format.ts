@@ -9,7 +9,7 @@ export function relativeTime(date: Date | string): string {
   if (hours < 24) return `${hours}h ago`;
   const days = Math.floor(hours / 24);
   if (days < 30) return `${days}d ago`;
-  return then.toLocaleDateString(undefined, { month: "short", day: "numeric" });
+  return then.toLocaleDateString("en-US", { month: "short", day: "numeric" });
 }
 
 export function formatDuration(ms: number): string {
@@ -20,5 +20,5 @@ export function formatDuration(ms: number): string {
 }
 
 export function shortSha(sha: string | null): string {
-  return sha ? sha.slice(0, 7) : "—";
+  return sha ? sha.slice(0, 7) : "-";
 }

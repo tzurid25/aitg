@@ -14,7 +14,7 @@ const program = new Command();
 
 program
   .name("aitg")
-  .description("AI Test Integrity Guard — mutation-tested quality gates for AI-generated code")
+  .description("AI Test Integrity Guard -- mutation-tested quality gates for AI-generated code")
   .version(process.env.AITG_CLI_VERSION ?? "0.1.0");
 
 program
@@ -36,6 +36,7 @@ program
   .description("Set up AI Test Integrity Guard in the current repository")
   .option("-p, --project <slug>", "project slug to link this repo to")
   .option("-f, --force", "overwrite an existing aitg.config.json")
+  .option("-l, --local", "set up for local-only use (no account, nothing uploaded)")
   .action((opts) => initCommand(opts).catch(failAndExit));
 
 program

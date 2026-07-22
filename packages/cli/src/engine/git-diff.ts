@@ -17,7 +17,7 @@ async function resolveMergeBase(git: SimpleGit, baseRef: string): Promise<string
   } catch {
     throw new CliError(
       `Could not find a common ancestor between HEAD and "${baseRef}".`,
-      `Check that "${baseRef}" exists locally — you may need to run \`git fetch\`.`,
+      `Check that "${baseRef}" exists locally -- you may need to run \`git fetch\`.`,
     );
   }
 }

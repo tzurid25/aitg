@@ -132,15 +132,104 @@ function resolveRunnerPlugin(cwd: string, runner: string): string[] {
  * *discovery* is a separate concern, still handled explicitly via
  * resolveRunnerPlugin above. See KNOWN-ISSUES.md for the full writeup.
  */
-function runStrykerSubprocess(cwd: string, configPath: string): Promise<void> {
+/**
+ * Turns Stryker's output into a specific cause and fix.
+ *
+ * Every pattern here is a failure that actually occurred during development,
+ * each of which originally surfaced as the same unhelpful line: "stryker
+ * exited with code 1". Diagnosing them meant re-running with AITG_DEBUG=1 and
+ * reading a stack trace — fine for us, not fine for someone evaluating the
+ * tool. If the output matches a known cause we name it directly; otherwise we
+ * fall back to the raw tail, which still beats a bare exit code.
+ */
+function diagnoseStrykerFailure(
+  output: string,
+  runner: string,
+): { message: string; hint: string } | null {
+  const plugin = `@stryker-mutator/${runner}-runner`;
+
+  if (/Cannot find TestRunner plugin|no TestRunner plugins were loaded/i.test(output)) {
+    return {
+      message: `Stryker could not load the "${runner}" test-runner plugin.`,
+      hint:
+        `Install it in this project:\n     npm install --save-dev ${plugin}\n` +
+        `   If it is already installed, check that its peer dependency on ${runner} is satisfied\n` +
+        `   (\`npm ls ${runner}\` will flag a version mismatch).`,
+    };
+  }
+
+  if (/Tsconfig not found|TSCONFIG_ERROR/i.test(output)) {
+    return {
+      message: "The test runner could not find a tsconfig while running in Stryker's sandbox.",
+      hint:
+        "Stryker copies this package into a temporary sandbox, so a tsconfig that\n" +
+        '   `extends` a file outside the package (e.g. "../../tsconfig.base.json")\n' +
+        "   is not copied with it. Inline the settings into this package's tsconfig.json.",
+    };
+  }
+
+  if (/There were failed tests in the initial test run/i.test(output)) {
+    return {
+      message: "Your test suite does not pass on its own, so mutation testing cannot start.",
+      hint:
+        "Stryker requires a green baseline: it compares mutated runs against a passing suite.\n" +
+        "   Run your normal test command, fix the failures, then re-run `aitg scan`.",
+    };
+  }
+
+  if (/No tests were executed/i.test(output)) {
+    return {
+      message: "Stryker ran, but your test runner executed no tests.",
+      hint:
+        "Usually the test files are not where the runner expects, or the mutated files\n" +
+        "   have no corresponding tests. Confirm your normal test command runs tests\n" +
+        "   from this directory.",
+    };
+  }
+
+  if (/did not result in any files/i.test(output)) {
+    return {
+      message: "Stryker found no files to mutate for the changed lines.",
+      hint:
+        "The mutate patterns did not match anything on disk. If you are running from a\n" +
+        "   subdirectory of the repository, try running `aitg scan` from the repo root.",
+    };
+  }
+
+  if (/ENOSPC|no space left/i.test(output)) {
+    return {
+      message: "Ran out of disk space while creating Stryker's sandbox.",
+      hint: "Free some space and re-run. `.test-guard/.stryker-tmp` can be deleted safely.",
+    };
+  }
+
+  if (/Cannot find module|ERR_MODULE_NOT_FOUND/i.test(output)) {
+    const missing = output.match(/Cannot find module '([^']+)'/)?.[1];
+    return {
+      message: missing
+        ? `Stryker could not resolve the module "${missing}".`
+        : "Stryker could not resolve a module it needs.",
+      hint: "Check that dependencies are installed (`npm install`), then re-run.",
+    };
+  }
+
+  return null;
+}
+
+function runStrykerSubprocess(
+  cwd: string,
+  configPath: string,
+  runner: string,
+): Promise<void> {
   return new Promise((resolve, reject) => {
     const isWindows = process.platform === "win32";
     const debug = process.env.AITG_DEBUG === "1";
-    // Inherit stdio under AITG_DEBUG so Stryker's own progress and errors are
-    // visible live. Otherwise capture it — our own logLevel: "warn" config
-    // already keeps Stryker quiet, and a failure surfaces via the rejected
-    // promise below with a pointer to re-run with AITG_DEBUG=1.
-    const stdio: StdioOptions = debug ? "inherit" : ["ignore", "pipe", "pipe"];
+    // Always capture stderr so failures can be diagnosed without asking the
+    // user to re-run with a flag. Under AITG_DEBUG stdout is inherited too,
+    // so Stryker's live progress stays visible.
+    const stdio: StdioOptions = debug
+      ? ["ignore", "inherit", "pipe"]
+      : ["ignore", "pipe", "pipe"];
 
     // npx resolves to npx.cmd on Windows, and Windows can't exec .cmd/.bat
     // files directly through spawn — it needs a shell to interpret them.
@@ -161,16 +250,14 @@ function runStrykerSubprocess(cwd: string, configPath: string): Promise<void> {
     }
 
     let output = "";
-    if (!debug) {
-      child.stdout?.on("data", (chunk) => (output += chunk.toString()));
-      child.stderr?.on("data", (chunk) => (output += chunk.toString()));
-    }
+    child.stdout?.on("data", (chunk) => (output += chunk.toString()));
+    child.stderr?.on("data", (chunk) => (output += chunk.toString()));
 
     child.on("error", (err) => {
       if (err instanceof Error && "code" in err && err.code === "ENOENT") {
         reject(
           new CliError(
-            "Could not run `npx stryker` — npx was not found on PATH.",
+            "Could not run `npx stryker` -- npx was not found on PATH.",
             "npx ships with npm; make sure Node.js is installed and on PATH.",
           ),
         );
@@ -185,14 +272,30 @@ function runStrykerSubprocess(cwd: string, configPath: string): Promise<void> {
         return;
       }
 
+      const diagnosis = diagnoseStrykerFailure(output, runner);
+
+      if (diagnosis) {
+        reject(
+          new CliError(
+            diagnosis.message,
+            debug
+              ? diagnosis.hint
+              : `${diagnosis.hint}\n\n   Re-run with AITG_DEBUG=1 for Stryker's full output.`,
+          ),
+        );
+        return;
+      }
+
+      // Unrecognized failure: show the tail of Stryker's own output rather
+      // than only an exit code, so the user has something to act on or paste
+      // into an issue without a second run.
+      const tail = output.trim().split("\n").slice(-25).join("\n");
       reject(
         new CliError(
           `Mutation testing failed (stryker exited with code ${code}).`,
-          debug
-            ? "Verify your test suite passes on its own first: run your normal test command."
-            : `Re-run with AITG_DEBUG=1 for Stryker's own output.${
-                output.trim() ? `\n\n${output.trim().split("\n").slice(-20).join("\n")}` : ""
-              }`,
+          tail
+            ? `Stryker reported:\n\n${tail}\n\n   Re-run with AITG_DEBUG=1 for the full output.`
+            : "Re-run with AITG_DEBUG=1 for Stryker's own output.",
         ),
       );
     });
@@ -343,7 +446,7 @@ export async function runMutationTests(
   const startedAt = Date.now();
 
   try {
-    await runStrykerSubprocess(options.cwd, configPath);
+    await runStrykerSubprocess(options.cwd, configPath, detected.runner);
   } catch (err) {
     if (err instanceof CliError) throw err;
     throw new CliError(

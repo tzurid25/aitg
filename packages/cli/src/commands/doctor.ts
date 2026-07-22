@@ -17,7 +17,7 @@ async function checkNodeVersion(): Promise<CheckResult> {
     ok,
     detail: ok
       ? `v${process.versions.node}`
-      : `v${process.versions.node} — aitg requires Node 18+`,
+      : `v${process.versions.node} -- aitg requires Node 18+`,
   };
 }
 
@@ -37,7 +37,7 @@ async function checkIsGitRepo(): Promise<CheckResult> {
     return {
       label: "current directory is a git repo",
       ok: isRepo,
-      detail: isRepo ? "yes" : "no — run inside your project repo",
+      detail: isRepo ? "yes" : "no -- run inside your project repo",
     };
   } catch {
     return { label: "current directory is a git repo", ok: false, detail: "could not determine" };
@@ -49,7 +49,7 @@ async function checkLoggedIn(): Promise<CheckResult> {
   return {
     label: "authenticated",
     ok: creds !== null,
-    detail: creds ? `${creds.userEmail} (${creds.organizationSlug})` : "not logged in — run `aitg login`",
+    detail: creds ? `${creds.userEmail} (${creds.organizationSlug})` : "not logged in -- run `aitg login`",
   };
 }
 
@@ -89,7 +89,7 @@ async function checkApiReachable(): Promise<CheckResult> {
       return {
         label: "API reachable",
         ok: true,
-        detail: `${API_BASE_URL} (not signed in — local scans still work)`,
+        detail: `${API_BASE_URL} (not signed in -- local scans still work)`,
       };
     } finally {
       clearTimeout(timeout);
@@ -105,7 +105,7 @@ async function checkApiReachable(): Promise<CheckResult> {
     return {
       label: "API reachable",
       ok: false,
-      detail: `${API_BASE_URL} — ${reason}. Local scans still work without it.`,
+      detail: `${API_BASE_URL} -- ${reason}. Local scans still work without it.`,
     };
   }
 }
@@ -117,7 +117,7 @@ async function checkTestRunner(): Promise<CheckResult> {
     return {
       label: "test runner",
       ok: false,
-      detail: "no package.json found — run `aitg doctor` from your project root",
+      detail: "no package.json found -- run `aitg doctor` from your project root",
     };
   }
 
@@ -125,21 +125,21 @@ async function checkTestRunner(): Promise<CheckResult> {
     return {
       label: "test runner",
       ok: true,
-      detail: "no supported plugin detected — will fall back to Stryker's command runner (slower, works with any framework)",
+      detail: "no supported plugin detected -- will fall back to Stryker's command runner (slower, works with any framework)",
     };
   }
 
   return {
     label: "test runner",
     ok: true,
-    detail: `${detected.runner} — will use ${detected.strykerPlugin}`,
+    detail: `${detected.runner} -- will use ${detected.strykerPlugin}`,
   };
 }
 
 async function checkProjectConfig(): Promise<CheckResult> {
   const exists = await projectConfigExists();
   if (!exists) {
-    return { label: "aitg.config.json", ok: false, detail: "not found — run `aitg init`" };
+    return { label: "aitg.config.json", ok: false, detail: "not found -- run `aitg init`" };
   }
   try {
     const config = await readProjectConfig();
@@ -180,7 +180,7 @@ export async function doctorCommand(): Promise<void> {
   if (failures.length === 0) {
     logger.success("Everything looks good.");
   } else {
-    logger.warn(`${failures.length} issue(s) found — see above.`);
+    logger.warn(`${failures.length} issue(s) found -- see above.`);
     process.exitCode = 1;
   }
 }
