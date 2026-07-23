@@ -1,9 +1,9 @@
 import crypto from "node:crypto";
 import { prisma } from "@aitg/database";
 import { deviceAuthPollRequestSchema, type DeviceAuthPollResponse } from "@aitg/shared";
-import { generateApiKey } from "../../../../../lib/api-keys";
-import { handleRoute, ok, parseBody } from "../../../../../lib/http";
-import { enforceRateLimit, ipKey, RATE_LIMITS } from "../../../../../lib/rate-limit";
+import { generateApiKey } from "@/lib/api-keys";
+import { handleRoute, ok, parseBody } from "@/lib/http";
+import { enforceRateLimit, ipKey, RATE_LIMITS } from "@/lib/rate-limit";
 
 export const dynamic = "force-dynamic";
 

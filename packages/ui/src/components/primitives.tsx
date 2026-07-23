@@ -55,7 +55,11 @@ const STATUS_STYLES: Record<MutantStatus, { fg: string; bg: string; text: string
 };
 
 export function StatusBadge({ status }: { status: MutantStatus }) {
-  const s = STATUS_STYLES[status];
+  // STATUS_STYLES is a complete Record<MutantStatus, ...>, so every key is
+  // present. noUncheckedIndexedAccess widens the lookup to `| undefined`
+  // regardless, and the fallback keeps an unknown status rendering rather
+  // than crashing the dashboard.
+  const s = STATUS_STYLES[status] ?? STATUS_STYLES.IGNORED;
   return (
     <span
       className="mono"

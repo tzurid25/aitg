@@ -79,6 +79,13 @@ export const mutantStatusSchema = z.enum([
   "IGNORED",
 ]);
 
+/**
+ * Derived from the schema so the type and the runtime validator can never
+ * drift apart. `packages/ui` imports this; it was missing, which meant that
+ * package did not compile at all.
+ */
+export type MutantStatus = z.infer<typeof mutantStatusSchema>;
+
 export const mutantSchema = z.object({
   id: z.string(),
   filePath: z.string().max(1024),

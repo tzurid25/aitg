@@ -1,8 +1,8 @@
 import { prisma } from "@aitg/database";
 import type { DeviceAuthStartResponse } from "@aitg/shared";
-import { generateDeviceCode, generateUserCode } from "../../../../lib/api-keys";
-import { handleRoute, ok } from "../../../../lib/http";
-import { enforceRateLimit, ipKey, RATE_LIMITS } from "../../../../lib/rate-limit";
+import { generateDeviceCode, generateUserCode } from "@/lib/api-keys";
+import { handleRoute, ok } from "@/lib/http";
+import { enforceRateLimit, ipKey, RATE_LIMITS } from "@/lib/rate-limit";
 
 export const dynamic = "force-dynamic";
 

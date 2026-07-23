@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { prisma } from "@aitg/database";
+import { prisma, MutantStatus } from "@aitg/database";
 import { Card, SectionLabel, GateBadge, EmptyState, Table, Th, Td } from "@aitg/ui";
 import { requireSession, scoped } from "../../lib/session";
 import { PageHeader } from "../../components/AppShell";
@@ -34,7 +34,7 @@ export default async function OverviewPage() {
     // answerable from any single run.
     prisma.mutant.groupBy({
       by: ["filePath"],
-      where: scoped(session, { status: "SURVIVED" }),
+      where: scoped(session, { status: MutantStatus.SURVIVED }),
       _count: { _all: true },
       orderBy: { _count: { filePath: "desc" } },
       take: 5,

@@ -1,5 +1,17 @@
-import _sodium from "libsodium-wrappers";
-import { githubRequest } from "./client.js";
+import { createRequire } from "node:module";
+
+// libsodium-wrappers' ESM build is broken: dist/modules-esm/
+// libsodium-wrappers.mjs imports "./libsodium.mjs", which the package does
+// not ship (verified against a clean npm install, so this is not a pnpm
+// artifact). Bundlers and Node's ESM loader both fail on it, which took down
+// the whole `apps/web` build and would have failed at runtime when sealing a
+// secret.
+//
+// The CJS build is complete and correct, so we load that explicitly. The
+// crypto below is unchanged.
+const require = createRequire(import.meta.url);
+const _sodium = require("libsodium-wrappers") as typeof import("libsodium-wrappers");
+import { githubRequest } from "./client";
 
 /**
  * One-click workflow setup.

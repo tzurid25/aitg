@@ -55,7 +55,12 @@ export function MutationStrip({ mutants, onSelect, maxCells = 2000 }: MutationSt
       KILLED: 4,
       IGNORED: 5,
     };
-    return [...mutants].sort((a, b) => priority[a.status] - priority[b.status]);
+    // Same totality caveat as StatusBadge: the record covers every status,
+    // but the index signature is widened by noUncheckedIndexedAccess. An
+    // unrecognised status sorts last rather than producing NaN, which would
+    // scramble the whole ordering.
+    const rank = (s: MutantStatus) => priority[s] ?? Number.MAX_SAFE_INTEGER;
+    return [...mutants].sort((a, b) => rank(a.status) - rank(b.status));
   }, [mutants]);
 
   const visible = ordered.slice(0, maxCells);

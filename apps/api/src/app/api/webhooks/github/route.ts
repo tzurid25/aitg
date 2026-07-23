@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@aitg/database";
-import { verifyWebhookSignature, isGithubConfigured } from "../../../lib/github/client.js";
-import { openPendingCheck } from "../../../lib/github/checks.js";
+import { verifyWebhookSignature, isGithubConfigured } from "@/lib/github/client";
+import { openPendingCheck } from "@/lib/github/checks";
 
 export const dynamic = "force-dynamic";
 
@@ -94,7 +94,9 @@ export async function POST(request: Request) {
       where: { id: event.id },
       data: {
         status: "FAILED",
-        error: err instanceof Error ? err.message : String(err),
+        // The model's field is `errorMessage`; writing `error` threw here,
+        // inside the handler whose whole job is recording the failure.
+        errorMessage: err instanceof Error ? err.message : String(err),
       },
     });
 

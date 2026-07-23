@@ -1,5 +1,5 @@
-import { redisConnection } from "./queues.js";
-import type { AuthContext } from "./auth.js";
+import { redisConnection } from "./queues";
+import type { AuthContext } from "./auth";
 
 /**
  * Rate limiting.

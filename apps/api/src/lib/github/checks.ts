@@ -1,4 +1,4 @@
-import { githubRequest } from "./client.js";
+import { githubRequest } from "./client";
 import { triageSurvivors, type Mutant } from "@aitg/shared";
 
 /**

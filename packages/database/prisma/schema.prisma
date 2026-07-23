@@ -127,6 +127,17 @@ enum AuditLogAction {
   API_KEY_REVOKED
   QUALITY_GATE_UPDATED
   BILLING_UPDATED
+
+  // Device-code CLI login. SECURITY.md Rule 3 treats the audit trail as the
+  // primary mitigation for device-code phishing, since the protocol cannot
+  // distinguish a phished approval from a legitimate one. Without these
+  // values the approval write fails and there is no trail at all.
+  CLI_DEVICE_APPROVED
+  CLI_DEVICE_DENIED
+
+  // GitHub App installation and repository connection.
+  GITHUB_APP_INSTALLED
+  REPOSITORY_CONNECTED
 }
 
 // ----------------------------------------------------------------------------
