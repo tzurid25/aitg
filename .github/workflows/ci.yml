@@ -1,0 +1,81 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 9
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: pnpm
+
+      - run: pnpm install --frozen-lockfile
+
+      - name: Build CLI
+        run: pnpm --filter @aitg/cli build
+
+      - name: Type check
+        run: pnpm --filter @aitg/cli type-check
+
+      # The diff-engine tests build real git repositories rather than mocking
+      # git, so a committer identity has to exist for them to commit at all.
+      - name: Configure git for test fixtures
+        run: |
+          git config --global user.email "ci@example.com"
+          git config --global user.name "CI"
+
+      - name: Test
+        run: pnpm --filter @aitg/cli exec vitest run src/
+
+  smoke:
+    name: Install from a packed tarball
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 9
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: pnpm
+
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm --filter @aitg/cli build
+
+      # Catches the class of bug that only appears once published: a runtime
+      # dependency that resolves inside the monorepo but is missing from the
+      # package's own `dependencies`. That shipped once already.
+      - name: Pack and install in isolation
+        run: |
+          cd packages/cli
+          npm pack
+          mkdir -p /tmp/smoke && cd /tmp/smoke
+          npm init -y > /dev/null
+          npm install "$GITHUB_WORKSPACE"/packages/cli/aitg-cli-*.tgz
+
+      - name: Run the installed binary
+        run: |
+          cd /tmp/smoke
+          npx aitg --version
+          npx aitg --help
+
+      - name: Local init works with no account
+        run: |
+          cd /tmp/smoke
+          git init -q
+          git config user.email "ci@example.com"
+          git config user.name "CI"
+          npx aitg init --local
+          test -f aitg.config.json

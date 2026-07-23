@@ -2,7 +2,7 @@
 
 [![npm](https://img.shields.io/npm/v/@aitg/cli)](https://www.npmjs.com/package/@aitg/cli)
 [![license](https://img.shields.io/npm/l/@aitg/cli)](LICENSE)
-[![tests](https://img.shields.io/badge/tests-54%20passing-brightgreen)](packages/cli/src)
+[![CI](https://github.com/tzurid25/aitg/actions/workflows/ci.yml/badge.svg)](https://github.com/tzurid25/aitg/actions/workflows/ci.yml)
 [![node](https://img.shields.io/badge/node-%3E%3D18-blue)](https://nodejs.org)
 
 **Find the tests that pass without checking anything.**
@@ -177,5 +177,7 @@ pnpm install
 pnpm --filter @aitg/cli build
 pnpm --filter @aitg/cli exec vitest run src/
 ```
+
+Contributions welcome — see [CONTRIBUTING.md](CONTRIBUTING.md).
 
 MIT
