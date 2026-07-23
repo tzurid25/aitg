@@ -1,4 +1,4 @@
-﻿# aitg
+# aitg
 
 [![npm](https://img.shields.io/npm/v/@aitg/cli)](https://www.npmjs.com/package/@aitg/cli)
 [![license](https://img.shields.io/npm/l/@aitg/cli)](LICENSE)
@@ -28,7 +28,7 @@ test("low score",   () => expect(classify(10)).toBeDefined());
 ```
 
 Flip `>=` to `>`. Flip it to `<`. Replace either condition with `true`.
-Delete a branch. **The suite still passes ג€” every time.**
+Delete a branch. **The suite still passes -- every time.**
 
 ```
 $ npx aitg scan
@@ -44,11 +44,11 @@ The gap between those two questions is where bugs reach production.
 
 ## How it works
 
-`aitg` changes your source on purpose ג€” `>=` becomes `>`, a condition becomes
-`true`, a boolean is negated ג€” and re-runs your tests against each change.
+`aitg` changes your source on purpose -- `>=` becomes `>`, a condition becomes
+`true`, a boolean is negated -- and re-runs your tests against each change.
 
-- A test fails ג†’ that behaviour is genuinely verified.
-- Nothing fails ג†’ the line runs, but nothing asserts on it. That's a gap.
+- A test fails -> that behaviour is genuinely verified.
+- Nothing fails -> the line runs, but nothing asserts on it. That's a gap.
 
 This is mutation testing, and it isn't new. What keeps it off most projects is
 cost: mutating a whole repo means running your suite thousands of times.
@@ -65,8 +65,8 @@ npx aitg scan
 ```
 
 Add the Stryker plugin for your runner (`@stryker-mutator/vitest-runner`,
-`jest-runner`, `mocha-runner`, ג€¦). Using ava, uvu, or `node:test`? No plugin
-needed ג€” it falls back to Stryker's command runner automatically.
+`jest-runner`, `mocha-runner`, ...). Using ava, uvu, or `node:test`? No plugin
+needed -- it falls back to Stryker's command runner automatically.
 
 ## What you get
 
@@ -77,7 +77,7 @@ gap explained in terms of the test you need to write:
 - if (score >= 80) return "healthy";
 + score > 80
 ```
-> A comparison boundary was shifted (inclusive ג†” exclusive) and no test
+> A comparison boundary was shifted (inclusive <-> exclusive) and no test
 > noticed, so the exact edge value is untested. Assert the boundary itself,
 > not just values on either side.
 
@@ -88,12 +88,12 @@ gap explained in terms of the test you need to write:
 > A comparison was reversed and no test noticed, so the direction of the
 > check is unverified.
 
-Same line, different tests required. `>= ג†’ >` is only distinguishable at
-exactly `80`; `>= ג†’ <` is distinguishable almost anywhere. The explanation is
+Same line, different tests required. `>= -> >` is only distinguishable at
+exactly `80`; `>= -> <` is distinguishable almost anywhere. The explanation is
 derived from the actual mutation rather than its category, because sending
 someone to write the wrong test is worse than saying nothing.
 
-Uncovered code gets its own section ג€” if nothing reaches a line, no mutant
+Uncovered code gets its own section -- if nothing reaches a line, no mutant
 there can survive, so a file with *zero* tests would otherwise look cleaner
 than one with weak tests.
 
@@ -145,7 +145,7 @@ during development were deliberately reintroduced, and each had to make tests
 fail.
 
 One didn't. A test asserting that the diff engine compares against the
-merge-base rather than the branch tip passed under *both* strategies ג€” the
+merge-base rather than the branch tip passed under *both* strategies -- the
 fixture's divergent commit added a file, which reads as a deletion against the
 tip, and deletions are skipped anyway. It looked correct, it passed, and it
 verified nothing.
@@ -156,7 +156,7 @@ other defect found while building it.
 
 ## Limits
 
-- Needs a **passing** suite to start from ג€” mutation runs are compared against
+- Needs a **passing** suite to start from -- mutation runs are compared against
   a green baseline.
 - Slower than coverage. Scoped to a diff it's seconds, but it isn't free.
 - Measures one property: whether your assertions would notice a change. It
@@ -180,6 +180,6 @@ pnpm --filter @aitg/cli exec vitest run src/
 
 Background reading: [Your AI-written tests pass. That doesn't mean they work.](https://dev.to/tzurid25/your-ai-written-tests-pass-that-doesnt-mean-they-work-h60)
 
-Contributions welcome ג€” see [CONTRIBUTING.md](CONTRIBUTING.md).
+Contributions welcome -- see [CONTRIBUTING.md](CONTRIBUTING.md).
 
 MIT
