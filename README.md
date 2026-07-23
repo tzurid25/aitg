@@ -1,116 +1,181 @@
-# AI Test Integrity Guard
+# aitg
 
-**Coverage is not quality. Mutation score is.**
+[![npm](https://img.shields.io/npm/v/@aitg/cli)](https://www.npmjs.com/package/@aitg/cli)
+[![license](https://img.shields.io/npm/l/@aitg/cli)](LICENSE)
+[![tests](https://img.shields.io/badge/tests-54%20passing-brightgreen)](packages/cli/src)
+[![node](https://img.shields.io/badge/node-%3E%3D18-blue)](https://nodejs.org)
 
-AI writes tests that execute your code without ever checking what it does.
-They pass. Coverage hits 100%. Then a bug ships through a line every report
-said was tested.
+**Find the tests that pass without checking anything.**
 
-`aitg` finds those tests. It makes small, deliberate changes to your changed
-code -- flipping a `>=` to `>`, replacing a condition with `true` -- and
-re-runs your suite. If nothing fails, that behaviour is executed but never
-verified, and `aitg` tells you exactly where and what to assert.
+---
 
-It mutates only the lines in your diff, so it runs in seconds rather than
-mutating the whole repository.
-
-## Quick start
-
-```bash
-npm install --save-dev @aitg/cli @stryker-mutator/core
-npx aitg init --local    # no account needed
-npx aitg scan
-```
-
-See [`packages/cli/README.md`](packages/cli/README.md) for full usage.
-
-## What it looks like
-
-Given a classifier and a test suite that only checks "something was
-returned":
+This function has 100% test coverage:
 
 ```js
-export function classify(score) {
+function classify(score) {
   if (score >= 80) return "healthy";
   if (score >= 50) return "warning";
   return "critical";
 }
 ```
 
+This is the suite that covers it:
+
 ```js
-test("returns a value for a high score", () => {
-  expect(classify(95)).toBeDefined();   // passes. verifies nothing.
-});
+test("high score",  () => expect(classify(95)).toBeDefined());
+test("mid score",   () => expect(classify(60)).toBeDefined());
+test("low score",   () => expect(classify(10)).toBeDefined());
 ```
 
-Coverage reports 100%. `aitg` reports:
+Flip `>=` to `>`. Flip it to `<`. Replace either condition with `true`.
+Delete a branch. **The suite still passes — every time.**
 
 ```
-Mutation score: 0%
-Survived: 8
+$ npx aitg scan
 
-! classify.js:2 (EqualityOperator)
-! classify.js:3 (ConditionalExpression)
+  Mutation score: 0%          <-- 8 ways to break this code
+  Coverage:       100%        <-- 0 of them caught
 ```
 
-And writes a prompt you can paste into any coding assistant, naming each gap:
+Coverage answers *"did a test run this line?"*
+The question that matters is *"would a test fail if this line were wrong?"*
+
+The gap between those two questions is where bugs reach production.
+
+## How it works
+
+`aitg` changes your source on purpose — `>=` becomes `>`, a condition becomes
+`true`, a boolean is negated — and re-runs your tests against each change.
+
+- A test fails → that behaviour is genuinely verified.
+- Nothing fails → the line runs, but nothing asserts on it. That's a gap.
+
+This is mutation testing, and it isn't new. What keeps it off most projects is
+cost: mutating a whole repo means running your suite thousands of times.
+
+**`aitg` mutates only the lines in your `git diff`.** Minutes become seconds,
+so it fits in a pull request instead of a nightly job.
+
+## Quick start
+
+```bash
+npm install --save-dev @aitg/cli @stryker-mutator/core
+npx aitg init --local    # no account, nothing uploaded
+npx aitg scan
+```
+
+Add the Stryker plugin for your runner (`@stryker-mutator/vitest-runner`,
+`jest-runner`, `mocha-runner`, …). Using ava, uvu, or `node:test`? No plugin
+needed — it falls back to Stryker's command runner automatically.
+
+## What you get
+
+`.test-guard/fix-prompt.md`, ready to paste into any coding assistant. Each
+gap explained in terms of the test you need to write:
 
 ```diff
 - if (score >= 80) return "healthy";
 + score > 80
 ```
-
-> A comparison boundary was shifted (inclusive <-> exclusive) and no test
+> A comparison boundary was shifted (inclusive ↔ exclusive) and no test
 > noticed, so the exact edge value is untested. Assert the boundary itself,
 > not just values on either side.
 
-## Repository layout
+```diff
+- if (score >= 80) return "healthy";
++ score < 80
+```
+> A comparison was reversed and no test noticed, so the direction of the
+> check is unverified.
 
-| Path | What it is |
+Same line, different tests required. `>= → >` is only distinguishable at
+exactly `80`; `>= → <` is distinguishable almost anywhere. The explanation is
+derived from the actual mutation rather than its category, because sending
+someone to write the wrong test is worse than saying nothing.
+
+Uncovered code gets its own section — if nothing reaches a line, no mutant
+there can survive, so a file with *zero* tests would otherwise look cleaner
+than one with weak tests.
+
+## Isn't this just Stryker?
+
+`aitg` runs on [StrykerJS](https://stryker-mutator.io/). Stryker does the
+mutation work; this is the layer that makes it usable per-PR:
+
+| | Stryker alone | with `aitg` |
+| --- | --- | --- |
+| Scope | Whole project (or hand-configured globs) | Exactly the lines in your diff |
+| Setup | Config file, plugin wiring, tuning | `aitg init --local` |
+| Runtime | Minutes to hours | Seconds |
+| Output | Mutant list / HTML report | Ranked gaps + a prompt to fix them |
+| Unsupported runner | Manual command-runner config | Automatic fallback |
+
+If you already run Stryker across your repo on a schedule, keep doing that.
+This is for the pull request you're reviewing right now.
+
+## CI
+
+```yaml
+- uses: actions/checkout@v4
+  with: { fetch-depth: 0 }     # merge-base needs history
+- run: npm ci
+- run: npx aitg scan --base origin/main
+```
+
+Exits non-zero when the gate fails. Threshold and exclusions live in
+`aitg.config.json`.
+
+## Commands
+
+| Command | |
 | --- | --- |
-| `packages/cli` | The `aitg` command-line tool. This is the published package. |
-| `packages/shared` | Report generation and triage logic, shared by CLI and dashboard. |
-| `packages/database` | Prisma schema and client. |
-| `packages/ui` | Design system for the dashboard. |
-| `apps/web` | Dashboard: scan history and score over time. |
-| `apps/api` | Cloud API backing the dashboard. |
+| `aitg init --local` | Set up. No account, nothing uploaded. |
+| `aitg scan` | Mutation-test the changed lines. |
+| `aitg scan --dry-run` | Show the mutation surface without running it. |
+| `aitg scan --base <ref>` | Diff against a specific ref. |
+| `aitg report` | Re-print the last report. |
+| `aitg doctor` | Diagnose the local setup. |
 
-The CLI works entirely offline. The dashboard and API are optional -- they add
-history and team-level tracking.
+Full usage: [`packages/cli/README.md`](packages/cli/README.md).
 
-## Development
+## On testing this tool
+
+54 tests, validated by mutation rather than by coverage: six defects fixed
+during development were deliberately reintroduced, and each had to make tests
+fail.
+
+One didn't. A test asserting that the diff engine compares against the
+merge-base rather than the branch tip passed under *both* strategies — the
+fixture's divergent commit added a file, which reads as a deletion against the
+tip, and deletions are skipped anyway. It looked correct, it passed, and it
+verified nothing.
+
+That is the exact failure mode this tool exists to find, discovered in its own
+suite. It's documented in [KNOWN-ISSUES.md](KNOWN-ISSUES.md) alongside every
+other defect found while building it.
+
+## Limits
+
+- Needs a **passing** suite to start from — mutation runs are compared against
+  a green baseline.
+- Slower than coverage. Scoped to a diff it's seconds, but it isn't free.
+- Measures one property: whether your assertions would notice a change. It
+  won't tell you you're testing the wrong things entirely.
+
+## Repository
+
+| Path | |
+| --- | --- |
+| `packages/cli` | The `aitg` command. This is the published package. |
+| `packages/shared` | Report generation and triage. |
+| `apps/web`, `apps/api` | Optional dashboard: history and score over time. |
+
+The CLI is fully offline. The dashboard is optional.
 
 ```bash
 pnpm install
 pnpm --filter @aitg/cli build
 pnpm --filter @aitg/cli exec vitest run src/
 ```
-
-Local infrastructure for the dashboard (Postgres + Redis):
-
-```bash
-docker compose up -d
-pnpm --filter @aitg/database db:generate
-pnpm dev
-```
-
-## Testing
-
-The CLI has 54 tests. They are validated by mutation rather than by coverage:
-past defects are deliberately reintroduced to confirm the suite catches them.
-One test failed that check during development and was strengthened -- the
-details are in [`KNOWN-ISSUES.md`](KNOWN-ISSUES.md), along with every defect
-found and fixed while getting the Stryker integration working.
-
-The diff-engine tests build a real git repository per test rather than mocking
-git, because the bugs they cover were about how git itself resolves pathspecs.
-
-## Built on
-
-[StrykerJS](https://stryker-mutator.io/) does the mutation testing. `aitg`
-scopes it to your diff, picks the settings that keep it fast, and turns the
-output into something you can act on.
-
-## License
 
 MIT
