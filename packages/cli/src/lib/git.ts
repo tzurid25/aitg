@@ -59,6 +59,13 @@ function parseRemoteUrl(url: string): { provider: RepoIdentity["provider"]; full
   }
 
   const [, host, fullName] = match;
+  // Both groups are non-optional in the patterns above, so a successful match
+  // implies both are present. Checking anyway keeps a malformed URL on the
+  // same clear error path as an unparseable one, instead of crashing later.
+  if (!host || !fullName) {
+    throw new CliError(`Could not parse remote URL: ${url}`);
+  }
+
   const provider: RepoIdentity["provider"] = host.includes("github.com")
     ? "GITHUB"
     : host.includes("gitlab.com")

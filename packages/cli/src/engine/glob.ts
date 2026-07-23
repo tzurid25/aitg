@@ -14,7 +14,10 @@ function globToRegExp(pattern: string): RegExp {
 
   for (let i = 0; i < pattern.length; i++) {
     const char = pattern[i];
-
+    // Bounds are guaranteed by the loop condition, but the index signature
+    // is `string | undefined` under noUncheckedIndexedAccess and the
+    // lookahead below rules out a for...of rewrite.
+    if (char === undefined) continue;
     if (char === "*") {
       if (pattern[i + 1] === "*") {
         // "**/" consumes the slash so it can also match zero segments.

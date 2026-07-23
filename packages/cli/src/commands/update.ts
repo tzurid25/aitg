@@ -16,7 +16,18 @@ function getCurrentVersion(): string {
 
 /** Minimal semver comparison — avoids pulling in a dependency for 3 integers. */
 function isNewer(remote: string, local: string): boolean {
-  const parse = (v: string) => v.replace(/^v/, "").split(".").map((n) => parseInt(n, 10) || 0);
+  // Pad to three segments so a short version like "1.2" compares correctly
+  // against "1.2.0". Destructuring a two-element array leaves the third
+  // component undefined, which then compares false against everything and
+  // silently reports "no update available".
+  const parse = (v: string): [number, number, number] => {
+    const parts = v
+      .replace(/^v/, "")
+      .split(".")
+      .map((n) => parseInt(n, 10) || 0);
+    return [parts[0] ?? 0, parts[1] ?? 0, parts[2] ?? 0];
+  };
+
   const [rMajor, rMinor, rPatch] = parse(remote);
   const [lMajor, lMinor, lPatch] = parse(local);
 
