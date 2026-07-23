@@ -22,6 +22,20 @@ export interface RateLimitRule {
   /** Requests permitted per window. */
   limit: number;
   windowSeconds: number;
+  /**
+   * What to do when Redis is unreachable.
+   *
+   * "open" (allow) is right for authenticated routes: the quota check still
+   * bounds cost, and refusing every upload because a cache is down is a
+   * self-inflicted outage.
+   *
+   * "closed" (reject) is right for pre-authentication routes, where this is
+   * not a cost control but the ONLY thing limiting an attacker's attempts.
+   * Failing open there silently removes the sole defence. A brief outage
+   * rejecting logins is recoverable; an unmonitored window of unlimited
+   * guessing is not.
+   */
+  onBackendFailure: "open" | "closed";
 }
 
 /**
@@ -29,10 +43,14 @@ export interface RateLimitRule {
  * they get the tightest limit. Reads are cheap and generous.
  */
 export const RATE_LIMITS = {
-  scanUpload: { limit: 30, windowSeconds: 3600 },
-  read: { limit: 600, windowSeconds: 60 },
-  deviceAuth: { limit: 10, windowSeconds: 600 },
-  devicePoll: { limit: 200, windowSeconds: 600 },
+  // Authenticated: quota still bounds cost if the limiter is unavailable.
+  scanUpload: { limit: 30, windowSeconds: 3600, onBackendFailure: "open" },
+  read: { limit: 600, windowSeconds: 60, onBackendFailure: "open" },
+
+  // Pre-authentication: the limiter is the only control on these, so an
+  // outage must not silently open them up.
+  deviceAuth: { limit: 10, windowSeconds: 600, onBackendFailure: "closed" },
+  devicePoll: { limit: 200, windowSeconds: 600, onBackendFailure: "closed" },
 } as const satisfies Record<string, RateLimitRule>;
 
 export interface RateLimitResult {
@@ -79,15 +97,17 @@ export async function consumeRateLimit(
       await redis.expire(namespaced, rule.windowSeconds);
     }
   } catch (err) {
-    // Fail OPEN, deliberately. A Redis outage should degrade rate limiting,
-    // not take the product down — the quota check still bounds cost, and
-    // refusing every upload because a cache is unreachable would be a
-    // self-inflicted outage.
-    console.error("[ratelimit] Redis unavailable, allowing request:", err);
+    // The fail mode is a property of the rule, not a blanket policy, so it
+    // cannot be forgotten at a call site. See RateLimitRule.onBackendFailure.
+    const allowed = rule.onBackendFailure === "open";
+    console.error(
+      `[ratelimit] Redis unavailable, ${allowed ? "allowing" : "rejecting"} request:`,
+      err,
+    );
     return {
-      allowed: true,
+      allowed,
       limit: rule.limit,
-      remaining: rule.limit,
+      remaining: allowed ? rule.limit : 0,
       resetSeconds: rule.windowSeconds,
     };
   }
