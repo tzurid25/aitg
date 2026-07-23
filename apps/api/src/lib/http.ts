@@ -1,4 +1,4 @@
-import { NextResponse } from "next/server";
+﻿import { NextResponse } from "next/server";
 import { ZodError, type ZodSchema } from "zod";
 import { ApiAuthError } from "./auth";
 import { QuotaExceededError } from "./quota";
@@ -40,12 +40,18 @@ export async function parseBody<T>(request: Request, schema: ZodSchema<T>): Prom
 export function handleRoute(
   handler: (request: Request, context: { params: Record<string, string> }) => Promise<NextResponse>,
 ) {
+  // Next 15 changed the route-handler contract twice over: `params` is now a
+  // Promise, and the context argument is no longer allowed to be optional
+  // (a default value widens the type to `| undefined`, which fails its
+  // ParamCheck constraint). We absorb both here so individual handlers keep
+  // receiving a plain, already-resolved params object.
   return async (
     request: Request,
-    context: { params: Record<string, string> } = { params: {} },
+    context: { params: Promise<Record<string, string>> },
   ): Promise<NextResponse> => {
     try {
-      return await handler(request, context);
+      const params = (await context?.params) ?? {};
+      return await handler(request, { params });
     } catch (err) {
       if (err instanceof ApiAuthError) {
         return fail(err.message, err.status, err.code);
@@ -57,7 +63,7 @@ export function handleRoute(
 
       if (err instanceof RateLimitError) {
         // Retry-After is what makes a 429 actionable rather than just a
-        // rejection — well-behaved clients and CI runners honour it.
+        // rejection ג€” well-behaved clients and CI runners honour it.
         const response = fail(err.message, 429, "RATE_LIMITED");
         response.headers.set("Retry-After", String(err.result.resetSeconds));
         response.headers.set("X-RateLimit-Limit", String(err.result.limit));

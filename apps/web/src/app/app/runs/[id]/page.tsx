@@ -1,4 +1,4 @@
-import Link from "next/link";
+﻿import Link from "next/link";
 import { notFound } from "next/navigation";
 import { prisma } from "@aitg/database";
 import { Card, SectionLabel, ScoreDial, GateBadge, StatusBadge } from "@aitg/ui";
@@ -10,12 +10,15 @@ import { relativeTime, shortSha } from "../../../../lib/format";
 
 export const dynamic = "force-dynamic";
 
-export default async function RunDetailPage({ params }: { params: { id: string } }) {
+// Next 15 made route params a Promise. Awaiting it is also valid in 14,
+// so this change is safe on both versions.
+export default async function RunDetailPage({ params }: { params: Promise<{ id: string }> }) {
+  const { id } = await params;
   const session = await requireSession();
 
   // Scoped: a run id from another tenant must 404, not leak.
   const run = await prisma.testRun.findFirst({
-    where: scoped(session, { id: params.id }),
+    where: scoped(session, { id }),
     select: {
       id: true,
       createdAt: true,
@@ -84,18 +87,18 @@ export default async function RunDetailPage({ params }: { params: { id: string }
     <>
       <div style={{ marginBottom: 6 }}>
         <Link href="/app/runs" className="mono" style={{ fontSize: 12, color: "var(--text-faint)" }}>
-          ← Runs
+          ג† Runs
         </Link>
       </div>
 
       <PageHeader
         title={run.repository.fullName}
-        description={`${run.branch ?? "unknown branch"} · ${shortSha(run.commitSha)} · ${relativeTime(run.createdAt)}`}
+        description={`${run.branch ?? "unknown branch"} ֲ· ${shortSha(run.commitSha)} ֲ· ${relativeTime(run.createdAt)}`}
         action={run.qualityGateResult ? <GateBadge status={run.qualityGateResult.status} /> : undefined}
       />
 
       {/* P0 outranks everything. A broken scan produces a meaningless score,
-          so the score is suppressed entirely rather than shown as 0% — which
+          so the score is suppressed entirely rather than shown as 0% ג€” which
           would read as "your tests are terrible" instead of "this didn't
           run". */}
       {run.severity === "P0_SCAN_BROKEN" && (
@@ -193,7 +196,7 @@ export default async function RunDetailPage({ params }: { params: { id: string }
             <SectionLabel>Session replay</SectionLabel>
             <div style={{ fontSize: 12.5, color: "var(--text-muted)", marginBottom: 12, lineHeight: 1.6 }}>
               Environment and timings captured with this scan. No source code is
-              stored — paths and line ranges only.
+              stored ג€” paths and line ranges only.
             </div>
             <div
               style={{
@@ -258,7 +261,7 @@ function ReplayField({ label, value }: { label: string; value: string | null | u
     <div>
       <div className="label">{label}</div>
       <div className="mono" style={{ fontSize: 12.5, marginTop: 3, color: value ? "var(--text)" : "var(--text-faint)" }}>
-        {value ?? "—"}
+        {value ?? "ג€”"}
       </div>
     </div>
   );
